@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+configs/.env
+
+# IDE
+.vscode/
+.idea/
+
+# Database (data files not tracked; use data/db_script/ to rebuild)
+data/DB/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test cache
+.pytest_cache/

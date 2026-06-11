@@ -1,0 +1,61 @@
+examples:
+  - question: 查询宁德时代最近100条数据的最新价格
+    sql: |
+      SELECT LatestPrice
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 100;
+  - question: 查询宁德时代最近100条数据的成交量
+    sql: |
+      SELECT Volume
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 100;
+  - question: 分析宁德时代最近20条数据的价格波动
+    sql: |
+      SELECT LatestPrice
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 20;
+  - question: 查询宁德时代最新5条数据
+    sql: |
+      SELECT *
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 5;
+  - question: 统计宁德时代最近30条数据的数量
+    sql: |
+      SELECT COUNT(*) AS total_count
+      FROM (
+          SELECT 1
+          FROM StockData
+          WHERE Name = '宁德时代'
+          ORDER BY TradeTime DESC
+          LIMIT 30
+      ) t;
+  - question: 查询最近一周宁德时代的收盘价走势
+    sql: |
+      SELECT LatestPrice, TradeTime
+      FROM StockData
+      WHERE Name = '宁德时代'
+        AND TradeTime >= '2026-03-11 00:00:00'
+        AND TradeTime < '2026-03-18 00:00:00'
+      ORDER BY TradeTime ASC;
+  - question: 分析宁德时代最近20条数据中是否存在异常价格
+    sql: |
+      SELECT LatestPrice
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 20;
+  - question: 对比宁德时代最近20条和前20条数据的价格变化
+    sql: |
+      SELECT LatestPrice
+      FROM StockData
+      WHERE Name = '宁德时代'
+      ORDER BY TradeTime DESC
+      LIMIT 40;

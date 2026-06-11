@@ -1,0 +1,134 @@
+intents:
+  advice:
+    - 买入
+    - 卖出
+    - 继续买
+    - 可以买吗
+    - 建议
+    - 能买吗
+    - 该不该买
+    - 值不值得买
+    - buy
+    - sell
+  analysis:
+    - 分析
+    - 判断
+    - 总结
+    - 结论
+    - 趋势
+    - 波动
+    - 异常
+    - 均值
+    - 平均
+    - 最高
+    - 最低
+    - 统计
+    - 相关性
+    - 波动率
+    - 标准差
+    - 多少条
+    - 总数
+    - 数量
+    - 对比
+    - 变化
+    - average
+    - avg
+    - max
+    - min
+    - count
+    - highest
+    - lowest
+    - largest
+    - compare
+    - volatility
+    - anomaly
+  pattern:
+    - 形态
+    - K线
+    - 金叉
+    - 死叉
+    - 均线
+    - 支撑位
+    - 压力位
+    - 支撑
+    - 压力
+    - 缺口
+    - 锤子
+    - 吞没
+    - 十字星
+    - 均线交叉
+  volume_price:
+    - 量价
+    - 量价关系
+    - 量价背离
+    - 放量
+    - 缩量
+    - OBV
+    - 能量潮
+    - 换手率
+    - 突破
+  volatility:
+    - 历史波动率
+    - ATR
+    - VaR
+    - 最大回撤
+    - 波动率锥
+    - 偏度
+    - 峰度
+  query:
+    - 查询
+    - 查看
+    - 列出
+    - 显示
+    - 给我
+    - 返回
+    - 找出
+    - 最新
+    - 最近
+    - 明细
+    - 原始
+    - latest
+    - recent
+    - view
+    - query
+
+fields:
+  Volume: ["成交量", "成交波动量", "量能", "手数"]
+  Turnover: ["成交额", "成交金额", "金额"]
+  ChangePercent: ["涨跌幅", "涨幅", "跌幅", "变化幅度"]
+  ChangeAmount: ["涨跌额", "变化额", "涨跌金额"]
+  HighPrice: ["最高价", "最高"]
+  LowPrice: ["最低价", "最低"]
+  OpenPrice: ["开盘价", "今开", "开盘"]
+  PrevClose: ["昨收", "昨收价"]
+  LatestPrice: ["价格", "股价", "最新价", "现价", "收盘价"]
+
+analysis_types:
+  count: ["多少条", "总数", "数量", "几条"]
+  volatility: ["波动", "标准差", "波动率", "稳定性"]
+  trend: ["趋势", "走势", "变化"]
+  anomaly: ["异常", "异常点", "异常值", "极端值"]
+  comparison: ["对比", "比较", "差异", "前后", "环比"]
+  basic: ["平均", "均值", "最高", "最低", "中位数"]
+
+out_of_domain_words:
+  - 订单
+  - 用户
+  - 商品
+  - 仓库
+  - 支付
+
+defaults:
+  intent: query
+  field: LatestPrice
+  analysis_type: basic
+  limit: 20
+  max_limit: 500
+
+data_sources:
+  sqlite_default:
+    description: "默认本地 SQLite 数据源，包含 StockData 和 StockData_15min 表。"
+  MarketQuote:
+    description: "模拟外部行情数据源，用于行情和因子查询。"
+  NewsSentiment:
+    description: "模拟外部新闻舆情数据源，用于金融新闻摘要和情绪分析。"

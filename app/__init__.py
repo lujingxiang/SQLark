@@ -1,0 +1,1 @@
+"""SQLark application package."""
