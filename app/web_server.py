@@ -6,11 +6,13 @@ import asyncio
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
+from typing import Dict
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -28,8 +30,13 @@ INDEX_HTML = ROOT_DIR / "static" / "index.html"
 
 app = FastAPI(title="SQLark", version="2.0")
 
+# stream_id -> threading.Event，用于中止正在进行的 SSE 流
+_active_streams: Dict[str, threading.Event] = {}
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("sqlark")
+
+app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +48,11 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     question: str
+    stream_id: str = ""
+
+
+class AbortRequest(BaseModel):
+    stream_id: str
 
 
 def _serialize_state(state: dict) -> dict:
@@ -113,37 +125,74 @@ async def stream_chat(request: ChatRequest):
             yield {"event": "error", "data": json.dumps({"error": "question 不能为空"}, ensure_ascii=False)}
         return EventSourceResponse(error_gen())
 
+    stream_id = request.stream_id
     graph = get_graph()
 
     async def event_generator():
         loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        abort_event = threading.Event()
+
+        if stream_id:
+            _active_streams[stream_id] = abort_event
 
         def _run_stream():
-            """在独立线程中运行同步的 graph.stream，避免阻塞事件循环。"""
-            return list(graph.stream({"question": question}))
+            """在独立线程中逐步执行 graph.stream，通过 queue 传递给异步生成器。"""
+            try:
+                for event in graph.stream({"question": question}):
+                    if abort_event.is_set():
+                        break
+                    loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
+            except Exception as exc:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc)))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
 
-        events = await loop.run_in_executor(None, _run_stream)
+        thread = threading.Thread(target=_run_stream, daemon=True)
+        thread.start()
 
-        # 累积完整状态，确保每个事件都包含所有节点的输出
         accumulated_state: dict = {}
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "done":
+                    break
+                if kind == "error":
+                    yield {"event": "error", "data": json.dumps({"error": payload}, ensure_ascii=False)}
+                    break
+                for node_name, state_update in payload.items():
+                    if isinstance(state_update, dict):
+                        accumulated_state.update(state_update)
+                    yield {
+                        "event": node_name,
+                        "data": json.dumps(
+                            _serialize_state(accumulated_state),
+                            ensure_ascii=False, default=str,
+                        ),
+                    }
+        finally:
+            if stream_id and stream_id in _active_streams:
+                del _active_streams[stream_id]
 
-        for event in events:
-            for node_name, state_update in event.items():
-                if isinstance(state_update, dict):
-                    accumulated_state.update(state_update)
-
-                yield {
-                    "event": node_name,
-                    "data": json.dumps(
-                        _serialize_state(accumulated_state),
-                        ensure_ascii=False, default=str,
-                    ),
-                }
-
-        logger.info("Stream api completed: question=%s status=%s message=%s", question, accumulated_state.get("status"), accumulated_state.get("message"))
-        yield {"event": "done", "data": json.dumps({**accumulated_state, "status": "complete"}, ensure_ascii=False, default=str)}
+        if abort_event.is_set():
+            logger.info("Stream aborted: question=%s stream_id=%s", question, stream_id)
+            yield {"event": "aborted", "data": json.dumps({"status": "aborted"}, ensure_ascii=False)}
+        else:
+            logger.info("Stream api completed: question=%s status=%s message=%s", question, accumulated_state.get("status"), accumulated_state.get("message"))
+            yield {"event": "done", "data": json.dumps({**accumulated_state, "status": "complete"}, ensure_ascii=False, default=str)}
 
     return EventSourceResponse(event_generator())
+
+
+@app.post("/api/abort")
+async def abort_stream(request: AbortRequest):
+    """中止指定 stream_id 的 SSE 流。"""
+    sid = request.stream_id
+    if sid and sid in _active_streams:
+        _active_streams[sid].set()
+        logger.info("Abort requested: stream_id=%s", sid)
+        return JSONResponse({"ok": True})
+    return JSONResponse({"ok": False})
 
 
 def run_web_server(host: str = "127.0.0.1", port: int = 8000) -> None:

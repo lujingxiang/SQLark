@@ -1,0 +1,1710 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQLark — 量化分析智能体</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet" />
+  <script src="/static/lightweight-charts.standalone.production.js"></script>
+  <style>
+    /* ═══════════════════════════════════════════
+       Design Tokens — Aurum Terminal
+       ═══════════════════════════════════════════ */
+    :root,
+    [data-theme="dark"] {
+      --bg-deep:      #07080f;
+      --bg-card:      #0d1020;
+      --bg-sidebar:   #090b17;
+      --bg-input:     #111525;
+      --bg-hover:     rgba(255,255,255,0.03);
+      --bg-highlight: rgba(220,150,20,0.07);
+      --text-primary:   #ece8df;
+      --text-secondary: #8a8070;
+      --text-weak:      #474038;
+      --accent:           #e8a020;
+      --accent-secondary: #c48010;
+      --accent-glow:        rgba(232,160,32,0.15);
+      --accent-glow-strong: rgba(232,160,32,0.32);
+      --border-glow:        rgba(232,160,32,0.22);
+      --line:        rgba(255,255,255,0.05);
+      --line-strong: rgba(255,255,255,0.09);
+      --color-up:     #22c55e;
+      --color-down:   #ef4444;
+      --color-warn:   #f59e0b;
+      --color-info:   #60a5fa;
+      --color-purple: #a78bfa;
+      --shadow-card: 0 8px 40px rgba(0,0,0,0.6);
+      --glass-bg:     rgba(13,16,32,0.82);
+      --glass-border: rgba(255,255,255,0.05);
+      --nav-bg:       rgba(7,8,15,0.92);
+      --chart-bg:     #0d1020;
+      --chart-grid:   rgba(255,255,255,0.03);
+      --chart-text:   #7a7262;
+      --font-display: "Playfair Display", "Noto Serif SC", Georgia, serif;
+      --font-ui:      "DM Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono:    "JetBrains Mono", "Fira Code", monospace;
+    }
+    [data-theme="light"] {
+      --bg-deep:      #f8f5ee;
+      --bg-card:      #ffffff;
+      --bg-sidebar:   #f0ece3;
+      --bg-input:     #faf7f1;
+      --bg-hover:     rgba(0,0,0,0.03);
+      --bg-highlight: rgba(180,100,0,0.06);
+      --text-primary:   #18130c;
+      --text-secondary: #6b6050;
+      --text-weak:      #a09080;
+      --accent:           #b86800;
+      --accent-secondary: #9a5500;
+      --accent-glow:        rgba(184,104,0,0.13);
+      --accent-glow-strong: rgba(184,104,0,0.24);
+      --border-glow:        rgba(184,104,0,0.20);
+      --line:        rgba(0,0,0,0.07);
+      --line-strong: rgba(0,0,0,0.13);
+      --color-up:     #16a34a;
+      --color-down:   #dc2626;
+      --color-warn:   #d97706;
+      --color-info:   #2563eb;
+      --color-purple: #7c3aed;
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.07);
+      --glass-bg:     rgba(255,255,255,0.92);
+      --glass-border: rgba(0,0,0,0.06);
+      --nav-bg:       rgba(248,245,238,0.94);
+      --chart-bg:     #ffffff;
+      --chart-grid:   rgba(0,0,0,0.04);
+      --chart-text:   #6b6050;
+    }
+
+    /* ═══════════════════════════════════════════
+       Reset & Base
+       ═══════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { 
+      font-size: 14px;
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+    body {
+      font-family: var(--font-ui);
+      color: var(--text-primary);
+      background: var(--bg-deep);
+      min-height: 100vh;
+      overflow: hidden;
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+    /* Subtle grain texture overlay */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      opacity: 0.6;
+    }
+    .mono { font-family: var(--font-mono); }
+
+    /* ═══════════════════════════════════════════
+       Navbar
+       ═══════════════════════════════════════════ */
+    .navbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 60px; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      background: var(--nav-bg);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-glow);
+      transition: background-color 0.35s ease, border-color 0.35s ease;
+    }
+    .nav-left { display: flex; align-items: center; gap: 14px; }
+    .nav-logo {
+      font-family: var(--font-display);
+      font-size: 23px; font-weight: 900; font-style: italic;
+      color: var(--accent);
+      letter-spacing: 0.01em; line-height: 1;
+    }
+    .nav-subtitle {
+      font-size: 10px; color: var(--text-weak); font-weight: 500;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      padding-left: 14px; border-left: 1px solid var(--line);
+    }
+    .nav-right { display: flex; align-items: center; gap: 6px; }
+    .nav-btn {
+      width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 6px;
+      background: transparent; color: var(--text-secondary); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.35s ease;
+    }
+    .nav-btn:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--border-glow); }
+    .nav-btn svg { width: 16px; height: 16px; }
+
+    /* ═══════════════════════════════════════════
+       Layout
+       ═══════════════════════════════════════════ */
+    .app-body {
+      display: flex; height: calc(100vh - 60px); margin-top: 60px;
+      position: relative; z-index: 1;
+    }
+    .sidebar {
+      width: 252px; min-width: 252px; background: var(--bg-sidebar);
+      border-right: 1px solid var(--line);
+      display: flex; flex-direction: column;
+      transition: width 0.28s ease, min-width 0.28s ease, opacity 0.28s ease, background-color 0.35s ease, border-color 0.35s ease;
+      overflow: hidden;
+    }
+    .sidebar.collapsed { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+    .sidebar-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 16px 14px; border-bottom: 1px solid var(--line);
+    }
+    .sidebar-title {
+      font-size: 10px; font-weight: 700; color: var(--text-weak);
+      text-transform: uppercase; letter-spacing: 0.12em;
+    }
+    .sidebar-new-btn {
+      width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 5px;
+      background: transparent; color: var(--text-secondary); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.35s ease; font-size: 16px; line-height: 1;
+      flex-shrink: 0;
+    }
+    .sidebar-new-btn:hover { background: var(--accent); color: var(--bg-deep); border-color: var(--accent); transform: scale(1.05); }
+    .sidebar-new-btn:active { transform: scale(0.95); }
+    .history-list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+    .history-list::-webkit-scrollbar { width: 3px; }
+    .history-list::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 2px; }
+    .history-item {
+      padding: 10px 6px 10px 14px; border-radius: 5px; cursor: pointer;
+      margin-bottom: 3px; transition: all 0.35s ease;
+      border-left: 2px solid transparent;
+      position: relative; display: flex; align-items: center; gap: 4px;
+    }
+    .history-item:hover { background: var(--bg-hover); }
+    .history-item.active { background: var(--bg-highlight); border-left-color: var(--accent); }
+    .history-item-content { flex: 1; min-width: 0; }
+    .history-intent {
+      display: inline-block; width: 6px; height: 6px; border-radius: 1px;
+      margin-right: 7px; flex-shrink: 0;
+    }
+    .history-text {
+      font-size: 12px; color: var(--text-secondary); line-height: 1.4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center;
+    }
+    .history-time { font-size: 10px; color: var(--text-weak); margin-top: 3px; letter-spacing: 0.02em; }
+    .history-menu-btn {
+      width: 22px; height: 22px; flex-shrink: 0; border-radius: 4px;
+      border: none; background: transparent; color: var(--text-weak);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 0.35s ease, background 0.35s ease;
+      font-size: 14px; line-height: 1; letter-spacing: 1px;
+    }
+    .history-item:hover .history-menu-btn,
+    .history-item .history-menu-btn.open { opacity: 1; }
+    .history-menu-btn:hover { background: var(--line-strong); color: var(--text-primary); }
+    .history-dropdown {
+      position: absolute; right: 8px; top: 32px; z-index: 200;
+      background: var(--bg-card); border: 1px solid var(--line-strong);
+      border-radius: 6px; overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      min-width: 110px;
+      animation: fadeSlideIn 0.12s ease;
+    }
+    .history-dropdown-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 14px; font-size: 12px; cursor: pointer;
+      color: var(--text-secondary); transition: background-color 0.35s ease;
+      white-space: nowrap;
+    }
+    .history-dropdown-item:hover { background: var(--bg-hover); }
+    .history-dropdown-item.danger { color: var(--color-down); }
+    .history-dropdown-item.danger:hover { background: rgba(239,68,68,0.08); }
+    .sidebar-empty {
+      padding: 28px 16px; text-align: center; color: var(--text-weak); font-size: 12px;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+    }
+    .sidebar-empty::before {
+      content: '📝'; font-size: 24px; opacity: 0.3;
+    }
+
+    /* ═══════════════════════════════════════════
+       Main Area
+       ═══════════════════════════════════════════ */
+    .main-area {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative;
+    }
+    .chat-flow {
+      flex: 1; overflow-y: auto; padding: 28px 32px 8px;
+      scroll-behavior: smooth;
+    }
+    .chat-flow::-webkit-scrollbar { width: 4px; }
+    .chat-flow::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 2px; }
+
+    /* ═══════════════════════════════════════════
+       Welcome Screen
+       ═══════════════════════════════════════════ */
+    .welcome-screen {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; text-align: center; padding: 40px; position: relative; overflow: hidden;
+    }
+    .welcome-bg-text {
+      position: absolute;
+      font-family: var(--font-display);
+      font-size: clamp(100px, 18vw, 240px);
+      font-weight: 900; font-style: italic;
+      color: var(--accent);
+      opacity: 0.028;
+      white-space: nowrap;
+      user-select: none; pointer-events: none;
+      letter-spacing: -0.03em;
+      transform: rotate(-6deg) translateY(10%);
+    }
+    .welcome-eyebrow {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.2em;
+      color: var(--accent); text-transform: uppercase;
+      margin-bottom: 14px; opacity: 0.75;
+      animation: fadeSlideIn 0.6s ease both;
+      transition: color 0.35s ease;
+    }
+    .welcome-title {
+      font-family: var(--font-display);
+      font-size: clamp(38px, 5vw, 54px); font-weight: 900; font-style: italic;
+      color: var(--text-primary);
+      letter-spacing: -0.01em; line-height: 1;
+      margin-bottom: 10px;
+      animation: fadeSlideIn 0.6s 0.1s ease both;
+      transition: color 0.35s ease;
+    }
+    .welcome-subtitle {
+      font-size: 13px; color: var(--accent); font-weight: 500;
+      letter-spacing: 0.08em; margin-bottom: 16px;
+      animation: fadeSlideIn 0.6s 0.15s ease both;
+      transition: color 0.35s ease;
+    }
+    .welcome-desc {
+      color: var(--text-secondary); font-size: 13px;
+      max-width: 380px; line-height: 1.85;
+      animation: fadeSlideIn 0.6s 0.2s ease both;
+      transition: color 0.35s ease;
+    }
+    .welcome-examples {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+      margin-top: 28px; max-width: 520px;
+      animation: fadeSlideIn 0.6s 0.3s ease both;
+    }
+    .example-chip {
+      padding: 7px 14px; border-radius: 4px;
+      border: 1px solid var(--line);
+      background: transparent; color: var(--text-secondary); font-size: 12px;
+      cursor: pointer; transition: all 0.35s ease, border-color 0.35s ease, color 0.35s ease, background-color 0.35s ease; font-family: var(--font-ui);
+    }
+    .example-chip:hover {
+      border-color: var(--accent); color: var(--accent); background: var(--bg-highlight);
+    }
+
+    /* ═══════════════════════════════════════════
+       Messages
+       ═══════════════════════════════════════════ */
+    .msg-user {
+      display: flex; justify-content: flex-end; margin-bottom: 18px;
+      animation: fadeSlideIn 0.22s ease;
+    }
+    .msg-user-bubble {
+      max-width: 68%; padding: 10px 16px;
+      border-radius: 12px 12px 3px 12px;
+      background: var(--accent); color: var(--bg-deep);
+      font-size: 13px; line-height: 1.65; word-break: break-word; font-weight: 500;
+    }
+
+    .msg-ai {
+      margin-bottom: 22px;
+      animation: fadeSlideIn 0.22s ease;
+    }
+    .ai-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-left: 3px solid transparent;
+      border-radius: 10px; overflow: hidden;
+      transition: border-left-color 0.35s ease, background-color 0.35s ease, border-color 0.35s ease;
+    }
+    .ai-card:hover { border-left-color: var(--accent); }
+    .ai-card-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px; border-bottom: 1px solid var(--line);
+      transition: border-color 0.35s ease, background-color 0.35s ease;
+    }
+    .ai-avatar {
+      width: 26px; height: 26px; border-radius: 5px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display); font-size: 13px; font-weight: 700; font-style: italic;
+      color: var(--bg-deep);
+    }
+    .ai-intent-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 3px;
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.07em; text-transform: uppercase;
+    }
+    .intent-query       { background: rgba(96,165,250,0.11); color: var(--color-info); }
+    .intent-analysis    { background: rgba(245,158,11,0.11); color: var(--color-warn); }
+    .intent-pattern     { background: rgba(239,68,68,0.11);  color: var(--color-down); }
+    .intent-volume_price{ background: rgba(96,165,250,0.11); color: var(--color-info); }
+    .intent-volatility  { background: rgba(167,139,250,0.11);color: var(--color-purple); }
+    .ai-time { font-size: 10px; color: var(--text-weak); margin-left: auto; font-family: var(--font-mono); letter-spacing: 0.04em; }
+    .ai-card-body { padding: 16px; }
+
+    /* ═══════════════════════════════════════════
+       Chart
+       ═══════════════════════════════════════════ */
+    .chart-container {
+      border-radius: 8px; overflow: hidden; margin-bottom: 14px;
+      border: 1px solid var(--line); background: var(--chart-bg);
+    }
+    .chart-inner { width: 100%; height: 340px; }
+    .chart-rsi-inner  { width: 100%; height: 120px; }
+    .chart-macd-inner { width: 100%; height: 100px; }
+    .chart-indicator-label { font-size: 11px; color: var(--text-weak); padding: 4px 10px 0; letter-spacing: 0.05em; font-weight: 600; }
+
+    /* ═══════════════════════════════════════════
+       Table
+       ═══════════════════════════════════════════ */
+    .table-wrap {
+      overflow: auto; max-height: 300px; border-radius: 8px;
+      border: 1px solid var(--line); background: var(--bg-card); margin-bottom: 14px;
+      transition: border-color 0.35s ease, background-color 0.35s ease;
+    }
+    .table-wrap::-webkit-scrollbar { width: 3px; height: 3px; }
+    .table-wrap::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 2px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .data-table th {
+      padding: 10px 14px; text-align: left; font-weight: 700;
+      color: var(--text-weak); background: var(--bg-sidebar);
+      position: sticky; top: 0; z-index: 1; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.09em;
+      border-bottom: 2px solid var(--accent-glow);
+      transition: color 0.35s ease, background-color 0.35s ease, border-color 0.35s ease;
+    }
+    .data-table td {
+      padding: 8px 14px; border-bottom: 1px solid var(--line); color: var(--text-secondary);
+      transition: border-color 0.35s ease, color 0.35s ease, background-color 0.35s ease;
+    }
+    .data-table tr:last-child td { border-bottom: 0; }
+    .data-table tr:hover td { background: var(--bg-hover); }
+    .data-table .mono { font-family: var(--font-mono); font-size: 11px; }
+    .val-up   { color: var(--color-up)   !important; }
+    .val-down { color: var(--color-down) !important; }
+
+    /* ═══════════════════════════════════════════
+       Stats
+       ═══════════════════════════════════════════ */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px; margin-bottom: 14px;
+    }
+    .stat-card {
+      padding: 13px; border-radius: 7px;
+      background: var(--bg-input); border: 1px solid var(--line);
+      transition: border-color 0.35s ease, background-color 0.35s ease;
+    }
+    .stat-card:hover { border-color: var(--border-glow); }
+    .stat-label { font-size: 10px; color: var(--text-weak); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.08em; transition: color 0.35s ease; }
+    .stat-value {
+      font-size: 20px; font-weight: 700;
+      color: var(--text-primary); font-family: var(--font-mono); letter-spacing: -0.02em;
+      transition: color 0.35s ease;
+    }
+
+    /* ═══════════════════════════════════════════
+       Summary
+       ═══════════════════════════════════════════ */
+    .summary-block {
+      padding: 14px 16px; border-radius: 7px; margin-bottom: 14px;
+      background: var(--bg-highlight);
+      border-left: 3px solid var(--accent);
+      line-height: 1.88; font-size: 13px; color: var(--text-primary);
+      transition: background-color 0.35s ease, border-color 0.35s ease, color 0.35s ease;
+    }
+    .summary-block mark {
+      background: rgba(232,160,32,0.18); color: var(--accent);
+      padding: 1px 5px; border-radius: 3px; font-weight: 700;
+    }
+
+    /* ═══════════════════════════════════════════
+       Exec Details
+       ═══════════════════════════════════════════ */
+    .exec-details { margin-top: 12px; }
+    .exec-toggle {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 0; cursor: pointer; color: var(--text-weak);
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+      border: none; background: none; transition: color 0.35s ease; user-select: none;
+    }
+    .exec-toggle:hover { color: var(--accent); }
+    .exec-toggle .chevron { display: inline-block; transition: transform 0.35s ease; font-size: 10px; }
+    .exec-toggle.open .chevron { transform: rotate(90deg); }
+    .exec-body { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+    .exec-body.open { max-height: 800px; }
+    .sql-block {
+      padding: 12px 14px; border-radius: 6px; margin-bottom: 8px;
+      background: var(--bg-deep); border: 1px solid var(--line);
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--accent); line-height: 1.65; white-space: pre-wrap; word-break: break-all;
+    }
+    .step-timeline-mini { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 0; }
+    .step-dot-mini {
+      width: 5px; height: 5px; border-radius: 50%; background: var(--text-weak); transition: all 0.35s ease;
+    }
+    .step-dot-mini.done   { background: var(--accent); }
+    .step-dot-mini.active { background: var(--accent); box-shadow: 0 0 5px var(--accent-glow-strong); animation: pulse 1.5s infinite; }
+    .step-line-mini { width: 14px; height: 1px; background: var(--line); transition: background-color 0.35s ease; }
+
+    /* ═══════════════════════════════════════════
+       Input Area
+       ═══════════════════════════════════════════ */
+    .input-area {
+      padding: 12px 32px 18px; background: var(--bg-deep);
+      border-top: 1px solid var(--line);
+      transition: background-color 0.35s ease, border-color 0.35s ease;
+    }
+    .step-progress {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 0; margin-bottom: 8px;
+      transition: opacity 0.4s, max-height 0.4s;
+    }
+    .step-progress.hidden { opacity: 0; max-height: 0; padding: 0; margin: 0; overflow: hidden; }
+    .step-node {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--text-weak); font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .step-circle {
+      width: 8px; height: 8px; border-radius: 50%;
+      border: 2px solid var(--text-weak); transition: all 0.35s ease;
+    }
+    .step-circle.done   { background: var(--accent); border-color: var(--accent); }
+    .step-circle.active { border-color: var(--accent); box-shadow: 0 0 8px var(--accent-glow-strong); animation: pulse 1.5s infinite; }
+    .step-connector { width: 22px; height: 1px; background: var(--line-strong); transition: background-color 0.35s ease; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 3px var(--accent-glow); }
+      50%       { box-shadow: 0 0 10px var(--accent-glow-strong); }
+    }
+
+    .input-row {
+      display: flex; align-items: flex-end; gap: 10px;
+      background: var(--bg-input); border: 1px solid var(--line);
+      border-radius: 10px; padding: 4px 4px 4px 16px;
+      transition: border-color 0.35s ease, box-shadow 0.35s ease, background-color 0.35s ease;
+    }
+    .input-row:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    .input-row textarea {
+      flex: 1; border: none; background: transparent; color: var(--text-primary);
+      font-size: 13px; line-height: 1.6; resize: none; outline: none;
+      font-family: var(--font-ui); min-height: 24px; max-height: 120px; padding: 10px 0;
+      transition: color 0.35s ease;
+    }
+    .input-row textarea::placeholder { color: var(--text-weak); transition: color 0.35s ease; }
+    .send-btn {
+      width: 38px; height: 38px; border-radius: 8px; border: none;
+      background: var(--accent); color: var(--bg-deep); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.35s ease; flex-shrink: 0;
+    }
+    .send-btn:hover { background: var(--accent-secondary); transform: translateY(-1px); }
+    .send-btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none; }
+    .send-btn svg { width: 16px; height: 16px; }
+    .send-btn.stop-mode {
+      background: transparent;
+      border: 1.5px solid rgba(239,68,68,0.45);
+      color: var(--color-down);
+    }
+    .send-btn.stop-mode:hover {
+      background: rgba(239,68,68,0.09);
+      border-color: var(--color-down);
+      transform: none;
+    }
+
+    /* ═══════════════════════════════════════════
+       Think Timer
+       ═══════════════════════════════════════════ */
+    .think-timer {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-weak);
+      letter-spacing: 0.04em;
+    }
+    .think-timer-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+      animation: pulse 1.5s infinite;
+    }
+
+    /* ═══════════════════════════════════════════
+       Skeleton
+       ═══════════════════════════════════════════ */
+    .skeleton { background: var(--bg-input); border-radius: 6px; position: relative; overflow: hidden; }
+    .skeleton::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+      animation: shimmer 1.8s infinite;
+    }
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+    .skeleton-line { height: 13px; margin-bottom: 10px; width: 100%; }
+    .skeleton-line.short { width: 55%; }
+    .skeleton-chart { height: 180px; margin-bottom: 14px; }
+    .skeleton-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .skeleton-stat { height: 60px; }
+
+    /* ═══════════════════════════════════════════
+       ReAct Trace
+       ═══════════════════════════════════════════ */
+    .trace-thoughts { margin-bottom: 8px; }
+    .trace-thought {
+      font-size: 11px; color: var(--text-secondary);
+      padding: 3px 0 3px 10px;
+      border-left: 2px solid var(--line-strong);
+      margin-bottom: 3px;
+      font-family: var(--font-mono);
+      transition: color 0.35s ease, border-color 0.35s ease;
+    }
+    .trace-tool {
+      background: var(--bg-input); border: 1px solid var(--line);
+      border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;
+      transition: border-color 0.35s ease, background-color 0.35s ease;
+    }
+    .trace-tool-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .trace-tool-name { font-size: 11px; font-weight: 700; color: var(--accent); font-family: var(--font-mono); transition: color 0.35s ease; }
+    .trace-tool-status { font-size: 11px; font-weight: 700; }
+    .trace-tool-status.ok   { color: var(--color-up); }
+    .trace-tool-status.fail { color: var(--color-down); }
+    .trace-cache-badge {
+      font-size: 9px; padding: 1px 5px; border-radius: 3px;
+      background: var(--bg-highlight); color: var(--accent);
+      font-weight: 700; letter-spacing: 0.05em;
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+    .trace-tool-sql {
+      font-family: var(--font-mono); font-size: 10px;
+      color: var(--text-secondary); margin-bottom: 4px;
+      word-break: break-all; line-height: 1.5;
+      transition: color 0.35s ease;
+    }
+    .trace-tool-result { font-size: 11px; color: var(--text-weak); transition: color 0.35s ease; }
+
+    /* ═══════════════════════════════════════════
+       Composite Signal
+       ═══════════════════════════════════════════ */
+    .composite-signal-card {
+      background: var(--bg-input); border: 1px solid var(--border-glow);
+      border-radius: 8px; padding: 14px; margin-bottom: 14px;
+      transition: background-color 0.35s ease, border-color 0.35s ease;
+    }
+    .backtest-card {
+      background: var(--bg-input); border: 1px solid var(--line);
+      border-radius: 8px; padding: 14px; margin-bottom: 14px;
+    }
+    .backtest-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .backtest-title { font-size: 13px; font-weight: 700; color: var(--text); }
+    .backtest-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+      background: rgba(99,102,241,0.12); color: #818cf8; }
+    .backtest-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .backtest-stat { background: var(--bg-hover); border-radius: 6px; padding: 8px 10px; }
+    .backtest-stat-label { font-size: 11px; color: var(--text-weak); margin-bottom: 3px; }
+    .backtest-stat-val { font-size: 15px; font-weight: 700; font-family: "DM Mono", monospace; }
+    .backtest-compare { margin-top: 8px; display: flex; gap: 8px; }
+    .backtest-cmp-item { flex: 1; background: var(--bg-hover); border-radius: 6px; padding: 7px 10px; }
+    .backtest-cmp-label { font-size: 10px; color: var(--text-weak); margin-bottom: 2px; }
+    .backtest-cmp-val { font-size: 13px; font-weight: 700; font-family: "DM Mono", monospace; }
+    .val-green { color: #22c55e; } .val-red { color: #ef4444; } .val-amber { color: #f59e0b; }
+    .composite-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+    }
+    .composite-title {
+      font-size: 10px; font-weight: 700; color: var(--text-weak);
+      text-transform: uppercase; letter-spacing: 0.12em; transition: color 0.35s ease;
+    }
+    .composite-rating {
+      font-size: 13px; font-weight: 700; font-family: var(--font-mono); transition: color 0.35s ease;
+    }
+    .composite-score-bar-wrap {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .composite-score-bar-track {
+      flex: 1; height: 6px; background: var(--line-strong); border-radius: 3px;
+      position: relative; overflow: visible; transition: background-color 0.35s ease;
+    }
+    .composite-score-bar-fill {
+      height: 100%; border-radius: 3px; transition: width 0.6s ease, background-color 0.35s ease;
+    }
+    .composite-score-center {
+      position: absolute; left: 50%; top: -3px; width: 1px; height: 12px;
+      background: var(--line-strong); transition: background-color 0.35s ease;
+    }
+    .composite-score-val {
+      font-size: 18px; font-weight: 700; font-family: var(--font-mono);
+      min-width: 46px; text-align: right; transition: color 0.35s ease;
+    }
+    .composite-signals { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .composite-signal-item {
+      font-size: 11px; color: var(--text-secondary);
+      padding: 3px 8px 3px 12px; border-left: 2px solid var(--border-glow);
+      transition: color 0.35s ease, border-color 0.35s ease;
+    }
+    .composite-components { display: flex; flex-wrap: wrap; gap: 5px; }
+    .comp-tag {
+      font-size: 10px; padding: 2px 7px; border-radius: 3px;
+      background: var(--bg-highlight); color: var(--text-secondary);
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+    .comp-key {
+      color: var(--text-weak); margin-right: 4px; font-weight: 700; transition: color 0.35s ease;
+    }
+
+    /* ═══════════════════════════════════════════
+       Animations
+       ═══════════════════════════════════════════ */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(7px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ═══════════════════════════════════════════
+       Responsive
+       ═══════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; top: 60px; left: 0; bottom: 0; z-index: 90; width: 260px; min-width: 260px; }
+      .sidebar.collapsed { transform: translateX(-100%); }
+      .chat-flow { padding: 16px; }
+      .input-area { padding: 8px 16px 14px; }
+      .msg-user-bubble { max-width: 84%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <span class="nav-logo">SQLark</span>
+      <span class="nav-subtitle">量化分析智能体</span>
+    </div>
+    <div class="nav-right">
+      <button class="nav-btn" id="toggleSidebar" title="切换侧边栏 (Ctrl+B)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+      <button class="nav-btn" id="toggleTheme" title="切换主题">
+        <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <button class="nav-btn" id="clearChat" title="清空对话 (Ctrl+L)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Sidebar + Main -->
+  <div class="app-body">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">对话历史</span>
+        <button class="sidebar-new-btn" id="newChat" title="新建对话">+</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="sidebar-empty" id="historyEmpty">暂无对话记录</div>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <div class="chat-flow" id="chatFlow">
+        <div class="welcome-screen" id="welcomeScreen">
+          <div class="welcome-bg-text">量化</div>
+          <div class="welcome-eyebrow">Powered by LangGraph</div>
+          <div class="welcome-title">SQLark</div>
+          <div class="welcome-subtitle">量化分析智能体</div>
+          <div class="welcome-desc">用自然语言查询股票数据，AI 自动识别意图、生成 SQL、执行分析并可视化展示
+          <br><span style="font-size:11px; color:var(--text-weak); margin-top:8px; display:inline-block">💡 Ctrl+L 新建对话 · Ctrl+K 焦点输入 · Ctrl+B 展开/隐藏历史</span>
+          </div>
+          <div class="welcome-examples">
+            <div class="example-chip" data-q="查看宁德时代最近5天的价格数据">价格查询</div>
+            <div class="example-chip" data-q="分析宁德时代最近10天的K线形态">形态分析</div>
+            <div class="example-chip" data-q="特斯拉最近5天是否出现量价背离">量价分析</div>
+            <div class="example-chip" data-q="计算特斯拉30天的历史波动率和最大回撤">波动率分析</div>
+            <div class="example-chip" data-q="对比宁德时代和特斯拉的基本统计特征">对比分析</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="step-progress hidden" id="stepProgress"></div>
+        <div class="input-row">
+          <textarea id="questionInput" rows="1" placeholder="输入问题，例如：分析宁德时代的K线形态特征…"></textarea>
+          <button class="send-btn" id="sendBtn" title="发送 (Enter)">
+            <svg id="iconSend" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            <svg id="iconStop" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL    = '/api/chat';
+    const STREAM_URL = '/api/stream';
+    const HISTORY_KEY = 'sqlark_history';
+    const THEME_KEY   = 'sqlark_theme';
+
+    const STEP_ORDER = [
+      'intent','planner','tool_selector','tool_executor','observation','decision',
+      'sql_generate','sql_execute','sql_validate','analysis_dispatch',
+      'basic_analysis','pattern_analysis','volume_price_analysis','volatility_analysis','summarize'
+    ];
+    const STEP_NAMES = {
+      intent:'意图识别', planner:'任务规划', tool_selector:'工具选择',
+      tool_executor:'工具执行', observation:'结果观察', decision:'决策',
+      sql_generate:'SQL 生成', sql_execute:'SQL 执行', sql_validate:'SQL 验证',
+      analysis_dispatch:'分析分发', basic_analysis:'基础分析',
+      pattern_analysis:'形态分析', volume_price_analysis:'量价分析',
+      volatility_analysis:'波动率分析', summarize:'结果总结',
+    };
+    const STEP_DISPLAY = ['intent','tool_executor','decision','summarize'];
+    const STEP_DISPLAY_NAMES = { intent:'意图识别', tool_executor:'工具执行', decision:'决策', summarize:'总结' };
+
+    const INTENT_META = {
+      query:        { label:'查询',  cls:'intent-query',        color:'#60a5fa' },
+      analysis:     { label:'分析',  cls:'intent-analysis',     color:'#f59e0b' },
+      pattern:      { label:'形态',  cls:'intent-pattern',      color:'#ef4444' },
+      volume_price: { label:'量价',  cls:'intent-volume_price', color:'#60a5fa' },
+      volatility:   { label:'波动',  cls:'intent-volatility',   color:'#a78bfa' },
+      chitchat:     { label:'对话',  cls:'intent-analysis',     color:'#64748b' },
+    };
+
+    const chatFlow      = document.getElementById('chatFlow');
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const questionInput = document.getElementById('questionInput');
+    const sendBtn       = document.getElementById('sendBtn');
+    const stepProgress  = document.getElementById('stepProgress');
+    const sidebar       = document.getElementById('sidebar');
+    const historyList   = document.getElementById('historyList');
+
+    let conversations  = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || '[]');
+    let currentConvId  = null;
+    let isRunning      = false;
+    let chartCounter   = 0;
+    let currentStreamId = null;
+
+    function escapeHtml(v) {
+      return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function isNumeric(v) { return v !== null && v !== '' && !Number.isNaN(Number(v)); }
+    function formatValue(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');
+      return String(value);
+    }
+    function highlightNumbers(text) {
+      return escapeHtml(text).replace(/(-?\d+(?:\.\d+)?%?)/g,'<mark>$1</mark>');
+    }
+    function timeAgo(ts) {
+      const diff = Date.now() - ts;
+      if (diff < 60000) return '刚刚';
+      if (diff < 3600000) return Math.floor(diff/60000)+' 分钟前';
+      if (diff < 86400000) return Math.floor(diff/3600000)+' 小时前';
+      return Math.floor(diff/86400000)+' 天前';
+    }
+    function genId() { return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+    /* Theme */
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('iconSun').style.display  = theme === 'light' ? 'none' : 'block';
+      document.getElementById('iconMoon').style.display = theme === 'light' ? 'block' : 'none';
+      localStorage.setItem(THEME_KEY, theme);
+    }
+    applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+    document.getElementById('toggleTheme').addEventListener('click', () => {
+      applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+
+    /* Sidebar */
+    document.getElementById('toggleSidebar').addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+
+    function renderHistory() {
+      const empty = document.getElementById('historyEmpty');
+      if (empty) empty.style.display = conversations.length ? 'none' : 'block';
+      const items = conversations.map(c => {
+        const meta = INTENT_META[c.intent] || { color:'#64748b' };
+        return `<div class="history-item ${c.id===currentConvId?'active':''}" data-id="${c.id}">
+          <div class="history-item-content">
+            <div class="history-text">
+              <span class="history-intent" style="background:${meta.color}"></span>
+              ${escapeHtml(c.question.slice(0,22))}${c.question.length>22?'…':''}
+            </div>
+            <div class="history-time">${timeAgo(c.timestamp)}</div>
+          </div>
+          <button class="history-menu-btn" data-menu-id="${c.id}" title="更多操作">···</button>
+        </div>`;
+      }).join('');
+      historyList.innerHTML = `<div class="sidebar-empty" id="historyEmpty" style="display:${conversations.length?'none':'block'}">暂无对话记录</div>${items}`;
+    }
+
+    let openMenuId = null;
+
+    function closeMenu() {
+      const existing = document.querySelector('.history-dropdown');
+      if (existing) existing.remove();
+      document.querySelectorAll('.history-menu-btn.open').forEach(b => b.classList.remove('open'));
+      openMenuId = null;
+    }
+
+    function openMenu(id, btn) {
+      closeMenu();
+      openMenuId = id;
+      btn.classList.add('open');
+      const dropdown = document.createElement('div');
+      dropdown.className = 'history-dropdown';
+      dropdown.innerHTML = `<div class="history-dropdown-item danger" data-action="delete" data-id="${id}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        删除对话
+      </div>`;
+      btn.parentElement.appendChild(dropdown);
+    }
+
+    function deleteConversation(id) {
+      conversations = conversations.filter(c => c.id !== id);
+      sessionStorage.setItem(HISTORY_KEY, JSON.stringify(conversations));
+      if (currentConvId === id) startNewChat();
+      else renderHistory();
+    }
+
+    historyList.addEventListener('click', e => {
+      const menuBtn = e.target.closest('.history-menu-btn');
+      if (menuBtn) {
+        e.stopPropagation();
+        const id = menuBtn.dataset.menuId;
+        if (openMenuId === id) { closeMenu(); return; }
+        openMenu(id, menuBtn);
+        return;
+      }
+      const action = e.target.closest('[data-action]');
+      if (action) {
+        e.stopPropagation();
+        if (action.dataset.action === 'delete') deleteConversation(action.dataset.id);
+        closeMenu();
+        return;
+      }
+      const item = e.target.closest('.history-item');
+      if (item) { closeMenu(); loadConversation(item.dataset.id); }
+    });
+
+    document.addEventListener('click', e => {
+      if (openMenuId && !e.target.closest('.history-dropdown') && !e.target.closest('.history-menu-btn')) {
+        closeMenu();
+      }
+    });
+
+    function saveConversation(conv) {
+      const idx = conversations.findIndex(c => c.id === conv.id);
+      if (idx >= 0) conversations[idx] = conv; else conversations.unshift(conv);
+      sessionStorage.setItem(HISTORY_KEY, JSON.stringify(conversations));
+      renderHistory();
+    }
+
+    function loadConversation(id) {
+      const conv = conversations.find(c => c.id === id);
+      if (!conv) return;
+      currentConvId = id;
+      renderHistory();
+      rebuildChat(conv);
+    }
+
+    function rebuildChat(conv) {
+      chatFlow.innerHTML = '';
+      if (conv.messages) {
+        for (const msg of conv.messages) {
+          if (msg.role === 'user') appendUserMsg(msg.text);
+          else appendAiMsg(msg.result, msg.question);
+        }
+      }
+      scrollToBottom();
+    }
+
+    document.getElementById('clearChat').addEventListener('click', startNewChat);
+    document.getElementById('newChat').addEventListener('click', startNewChat);
+
+    function startNewChat() {
+      // 重置对话状态
+      currentConvId = null;
+      isRunning = false;
+      
+      // 清空所有消息，仅保留欢迎屏幕
+      chatFlow.innerHTML = '';
+      chatFlow.appendChild(welcomeScreen);
+      
+      // 显示欢迎屏幕
+      welcomeScreen.style.display = '';
+      
+      // 隐藏步骤进度条
+      if (stepProgress) stepProgress.classList.add('hidden');
+      
+      // 更新历史记录UI
+      renderHistory();
+      
+      // 焦点放在输入框
+      questionInput.value = '';
+      questionInput.focus();
+    }
+
+    /* Messages */
+    function appendUserMsg(text) {
+      if (welcomeScreen) welcomeScreen.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'msg-user';
+      div.innerHTML = `<div class="msg-user-bubble">${escapeHtml(text)}</div>`;
+      chatFlow.appendChild(div);
+      scrollToBottom();
+    }
+
+    function appendAiMsg(result, question) {
+      if (welcomeScreen) welcomeScreen.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'msg-ai';
+      const intent = result.intent || (result.plan && result.plan.intent) || 'query';
+      const meta   = INTENT_META[intent] || INTENT_META.query;
+      const cardId = 'card-' + genId();
+      const now    = new Date();
+      const timeStr = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+
+      div.innerHTML = `<div class="ai-card" id="${cardId}">
+        <div class="ai-card-header">
+          <div class="ai-avatar">S</div>
+          <span class="ai-intent-tag ${meta.cls}">${meta.label}</span>
+          <span class="ai-time">${timeStr}</span>
+        </div>
+        <div class="ai-card-body">${renderResultBody(result, cardId)}</div>
+      </div>`;
+      chatFlow.appendChild(div);
+      scrollToBottom();
+      requestAnimationFrame(() => { renderCharts(result, cardId); renderIndicatorCharts(result, cardId); });
+    }
+
+    let _thinkTimer = null;
+
+    function appendSkeletonMsg() {
+      if (welcomeScreen) welcomeScreen.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'msg-ai'; div.id = 'skeleton-msg';
+      div.innerHTML = `<div class="ai-card">
+        <div class="ai-card-header">
+          <div class="ai-avatar" style="animation:pulse 1.5s infinite">S</div>
+          <span class="ai-intent-tag" style="background:var(--bg-hover);color:var(--text-weak)">思考中</span>
+          <span class="think-timer"><span class="think-timer-dot"></span><span id="think-timer-val">0.0s</span></span>
+        </div>
+        <div class="ai-card-body">
+          <div class="skeleton skeleton-chart"></div>
+          <div class="skeleton-stats"><div class="skeleton skeleton-stat"></div><div class="skeleton skeleton-stat"></div><div class="skeleton skeleton-stat"></div></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line short"></div>
+        </div>
+      </div>`;
+      chatFlow.appendChild(div);
+      scrollToBottom();
+
+      const start = Date.now();
+      _thinkTimer = setInterval(() => {
+        const el = document.getElementById('think-timer-val');
+        if (!el) { clearInterval(_thinkTimer); return; }
+        const s = (Date.now() - start) / 1000;
+        el.textContent = s < 60 ? s.toFixed(1) + 's' : Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+      }, 100);
+    }
+
+    function removeSkeleton() {
+      clearInterval(_thinkTimer); _thinkTimer = null;
+      const sk = document.getElementById('skeleton-msg'); if (sk) sk.remove();
+    }
+    function scrollToBottom() { requestAnimationFrame(() => { chatFlow.scrollTop = chatFlow.scrollHeight; }); }
+
+    /* Result rendering */
+    function renderResultBody(result, cardId) {
+      const intent = result.intent || (result.plan && result.plan.intent) || 'query';
+      let html = '';
+
+      if (intent === 'chitchat') {
+        html += `<div class="summary-block">${highlightNumbers(result.summary || '你好！')}</div>`;
+        return html;
+      }
+
+      if (intent === 'query') {
+        const rows = (result.query_result && result.query_result.rows) || [];
+        if (hasOHLC(rows)) {
+          html += `<div class="chart-container"><div class="chart-inner" id="chart-${cardId}"></div></div>`;
+        } else {
+          const field = chooseNumericField(rows);
+          if (field && rows.length >= 2) html += `<div class="chart-container"><div class="chart-inner" id="chart-${cardId}"></div></div>`;
+        }
+        if (rows.length) html += renderTable(rows);
+      } else if (intent === 'analysis') {
+        html += renderAnalysisBlock(result);
+      } else if (intent === 'pattern' || intent === 'volume_price' || intent === 'volatility'
+                 || result.pattern_result || result.quant_result) {
+        const rows = (result.query_result && result.query_result.rows) || [];
+        if (hasOHLC(rows)) {
+          html += `<div class="chart-container"><div class="chart-inner" id="chart-${cardId}"></div></div>`;
+          html += `<div class="chart-container"><div class="chart-indicator-label">RSI (14)</div><div class="chart-rsi-inner" id="rsi-chart-${cardId}"></div></div>`;
+          html += `<div class="chart-container"><div class="chart-indicator-label">MACD (12, 26, 9)</div><div class="chart-macd-inner" id="macd-chart-${cardId}"></div></div>`;
+        }
+        html += renderCompositeSignal(result.composite_signal);
+        html += renderBacktestCard(result.backtest_result);
+        html += renderQuantBlock(result);
+      } else {
+        const rows = (result.query_result && result.query_result.rows) || [];
+        if (rows.length) {
+          if (hasOHLC(rows)) html += `<div class="chart-container"><div class="chart-inner" id="chart-${cardId}"></div></div>`;
+          html += renderTable(rows);
+        }
+        if (result.analysis_result) html += renderAnalysisBlock(result);
+      }
+
+      html += renderReActTrace(result);
+      html += renderExecDetails(result);
+      return html;
+    }
+
+    function renderTable(rows) {
+      if (!rows.length) return '';
+      const columns = Object.keys(rows[0]);
+      const head = columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+      const body = rows.slice(0,100).map(row =>
+        `<tr>${columns.map(c => {
+          const v = row[c]; const formatted = formatValue(v);
+          const cls = isNumeric(v) ? ' mono' : '';
+          const valCls = Number(v)>0?' val-up':Number(v)<0?' val-down':'';
+          return `<td class="${cls}${valCls}">${escapeHtml(formatted)}</td>`;
+        }).join('')}</tr>`
+      ).join('');
+      const note = rows.length>100 ? `<div style="padding:8px 14px;font-size:10px;color:var(--text-weak)">仅显示前 100 行，共 ${rows.length} 行</div>` : '';
+      return `<div class="table-wrap"><table class="data-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${note}`;
+    }
+
+    function renderAnalysisBlock(result) {
+      const stats = (result.analysis_result && result.analysis_result.stats) || {};
+      const entries = Object.entries(stats).filter(([_,v]) => ['string','number'].includes(typeof v));
+      const statCards = entries.slice(0,6).map(([k,v]) => {
+        const val = Number(v); const cls = val>0?'val-up':val<0?'val-down':'';
+        return `<div class="stat-card"><div class="stat-label">${escapeHtml(k)}</div><div class="stat-value ${cls}">${escapeHtml(formatValue(v))}</div></div>`;
+      }).join('');
+      const summary = result.summary || result.message || '已完成分析。';
+      return `<div class="summary-block">${highlightNumbers(summary)}</div>${statCards?`<div class="stats-grid">${statCards}</div>`:''}`;
+    }
+
+    function renderCompositeSignal(composite) {
+      if (!composite || typeof composite !== 'object' || composite.error) return '';
+      const score    = composite.score  ?? 0;
+      const rating   = composite.rating ?? '中性';
+      const signals  = composite.signals    ?? [];
+      const comps    = composite.components ?? {};
+
+      const scoreColor = score >= 30 ? 'var(--color-up)'
+                       : score <= -30 ? 'var(--color-down)'
+                       : 'var(--color-warn)';
+      const barPct = ((score + 100) / 200 * 100).toFixed(1);
+      const scoreLabel = (score > 0 ? '+' : '') + score;
+
+      const signalsHtml = signals.map(s =>
+        `<div class="composite-signal-item">${escapeHtml(s)}</div>`
+      ).join('');
+
+      const compHtml = Object.entries(comps).map(([k, v]) =>
+        `<span class="comp-tag"><span class="comp-key">${escapeHtml(k)}</span>${escapeHtml(String(v ?? 'N/A'))}</span>`
+      ).join('');
+
+      return `<div class="composite-signal-card">
+        <div class="composite-header">
+          <span class="composite-title">综合信号评分</span>
+          <span class="composite-rating" style="color:${scoreColor}">${escapeHtml(rating)}</span>
+        </div>
+        <div class="composite-score-bar-wrap">
+          <div class="composite-score-bar-track">
+            <div class="composite-score-bar-fill" style="width:${barPct}%;background:${scoreColor}"></div>
+            <div class="composite-score-center"></div>
+          </div>
+          <span class="composite-score-val" style="color:${scoreColor}">${escapeHtml(scoreLabel)}</span>
+        </div>
+        ${signalsHtml ? `<div class="composite-signals">${signalsHtml}</div>` : ''}
+        ${compHtml    ? `<div class="composite-components">${compHtml}</div>` : ''}
+      </div>`;
+    }
+
+    function renderBacktestCard(bt) {
+      if (!bt || bt.error) return '';
+      const fmtPct = v => (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+      const colorClass = v => v > 0 ? 'val-green' : v < 0 ? 'val-red' : '';
+      const ddColor = v => v > 15 ? 'val-red' : v > 8 ? 'val-amber' : 'val-green';
+      const sharpeColor = v => v >= 1 ? 'val-green' : v >= 0.5 ? 'val-amber' : v < 0 ? 'val-red' : '';
+      return `<div class="backtest-card">
+        <div class="backtest-header">
+          <span class="backtest-title">策略回测</span>
+          <span class="backtest-tag">${escapeHtml(bt.strategy || '')}</span>
+        </div>
+        <div class="backtest-grid">
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">超额收益</div>
+            <div class="backtest-stat-val ${colorClass(bt.excess_return)}">${fmtPct(bt.excess_return)}</div>
+          </div>
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">最大回撤</div>
+            <div class="backtest-stat-val ${ddColor(bt.max_drawdown)}">-${bt.max_drawdown.toFixed(2)}%</div>
+          </div>
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">Sharpe</div>
+            <div class="backtest-stat-val ${sharpeColor(bt.sharpe)}">${bt.sharpe.toFixed(2)}</div>
+          </div>
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">胜率</div>
+            <div class="backtest-stat-val ${colorClass(bt.win_rate - 50)}">${bt.win_rate.toFixed(1)}%</div>
+          </div>
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">交易次数</div>
+            <div class="backtest-stat-val">${bt.trade_count}</div>
+          </div>
+          <div class="backtest-stat">
+            <div class="backtest-stat-label">盈/亏</div>
+            <div class="backtest-stat-val"><span class="val-green">${bt.win_count}</span> / <span class="val-red">${bt.loss_count}</span></div>
+          </div>
+        </div>
+        <div class="backtest-compare">
+          <div class="backtest-cmp-item">
+            <div class="backtest-cmp-label">策略总收益</div>
+            <div class="backtest-cmp-val ${colorClass(bt.total_return)}">${fmtPct(bt.total_return)}</div>
+          </div>
+          <div class="backtest-cmp-item">
+            <div class="backtest-cmp-label">买入持有收益</div>
+            <div class="backtest-cmp-val ${colorClass(bt.buy_and_hold_return)}">${fmtPct(bt.buy_and_hold_return)}</div>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function renderQuantBlock(result) {
+      const data    = result.pattern_result || result.quant_result || {};
+      const summary = result.summary || '量化分析完成。';
+      const entries = Object.entries(data).filter(([k,v]) => typeof v !== 'object' && v !== null && v !== undefined);
+      const statCards = entries.slice(0,8).map(([k,v]) => {
+        const val = Number(v); const cls = val>0?'val-up':val<0?'val-down':'';
+        return `<div class="stat-card"><div class="stat-label">${escapeHtml(k)}</div><div class="stat-value ${cls}">${escapeHtml(formatValue(v))}</div></div>`;
+      }).join('');
+      return `<div class="summary-block">${highlightNumbers(summary)}</div>${statCards?`<div class="stats-grid">${statCards}</div>`:''}`;
+    }
+
+    function renderReActTrace(result) {
+      const toolHistory = result.tool_history || [];
+      const thoughts    = result.thoughts    || [];
+      if (!toolHistory.length && !thoughts.length) return '';
+
+      const thinkHtml = thoughts.map(t =>
+        `<div class="trace-thought">${escapeHtml(t)}</div>`
+      ).join('');
+
+      const toolsHtml = toolHistory.map(entry => {
+        const ok        = entry.result && entry.result.ok;
+        const sql       = entry.args   && entry.args.sql_query;
+        const count     = entry.result && entry.result.count;
+        const err       = entry.result && entry.result.error;
+        const fromCache = entry.from_cache;
+        const sqlPreview = sql ? (sql.length > 120 ? sql.slice(0, 120) + '…' : sql) : '';
+        return `<div class="trace-tool">
+          <div class="trace-tool-header">
+            <span class="trace-tool-name">${escapeHtml(entry.tool)}</span>
+            <span class="trace-tool-status ${ok ? 'ok' : 'fail'}">${ok ? '✓' : '✗'}</span>
+            ${fromCache ? '<span class="trace-cache-badge">缓存</span>' : ''}
+          </div>
+          ${sqlPreview ? `<div class="trace-tool-sql">${escapeHtml(sqlPreview)}</div>` : ''}
+          <div class="trace-tool-result">${ok
+            ? (count !== undefined && count !== '' ? `返回 ${count} 条数据` : '执行成功')
+            : escapeHtml(err || '执行失败')
+          }</div>
+        </div>`;
+      }).join('');
+
+      const total = toolHistory.length + thoughts.length;
+      return `<div class="exec-details">
+        <button class="exec-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <span class="chevron">▸</span> 推理过程
+          <span style="color:var(--text-weak);font-weight:400;margin-left:4px">(${total} 步)</span>
+        </button>
+        <div class="exec-body">
+          ${thinkHtml ? `<div class="trace-thoughts">${thinkHtml}</div>` : ''}
+          ${toolsHtml}
+        </div>
+      </div>`;
+    }
+
+    function renderExecDetails(result) {
+      const sql   = result.sql || result.retry_sql || '';
+      const steps = result._completedSteps || [];
+      if (!sql && !steps.length) return '';
+      const stepDots = STEP_ORDER.map((s,i) =>
+        `<span class="step-dot-mini ${steps.includes(s)?'done':''}" title="${STEP_NAMES[s]}"></span>${i<STEP_ORDER.length-1?'<span class="step-line-mini"></span>':''}`
+      ).join('');
+      return `<div class="exec-details">
+        <button class="exec-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <span class="chevron">▸</span> 执行详情
+        </button>
+        <div class="exec-body">
+          ${sql?`<div class="sql-block">${escapeHtml(sql)}</div>`:''}
+          <div class="step-timeline-mini">${stepDots}</div>
+        </div>
+      </div>`;
+    }
+
+    /* Charts */
+    function hasOHLC(rows) {
+      if (!rows.length) return false;
+      const keys = Object.keys(rows[0]);
+      return ['LatestPrice','HighPrice','LowPrice','OpenPrice'].every(k => keys.includes(k))
+          || (keys.includes('HighPrice') && keys.includes('LowPrice') && keys.includes('OpenPrice') && keys.includes('ClosePrice'));
+    }
+    function chooseNumericField(rows) {
+      if (!rows.length) return null;
+      const keys = Object.keys(rows[0]);
+      const preferred = ['LatestPrice','HighPrice','LowPrice','ChangePercent','Volume','Turnover'];
+      for (const key of preferred) { if (keys.includes(key) && rows.some(r => isNumeric(r[key]))) return key; }
+      return keys.find(key => rows.some(r => isNumeric(r[key]))) || null;
+    }
+    function findDateField(rows) {
+      if (!rows.length) return null;
+      const keys = Object.keys(rows[0]);
+      const preferred = ['TradeDate','Date','TradingDay','日期','date'];
+      for (const key of preferred) { if (keys.includes(key)) return key; }
+      return keys.find(k => { const v = rows[0][k]; return typeof v==='string' && /^\d{4}[-/]\d{2}[-/]\d{2}/.test(v); }) || null;
+    }
+    function parseDate(v) {
+      if (!v) return null;
+      const s = String(v).replace(/\//g,'-').trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+      if (m) return new Date(+m[1],+m[2]-1,+m[3],m[4]?+m[4]:0,m[5]?+m[5]:0,m[6]?+m[6]:0).getTime()/1000;
+      const n = Number(s);
+      if (!Number.isNaN(n) && n>1e9) return n<1e12?n:n/1000;
+      return null;
+    }
+
+    function renderCharts(result, cardId) {
+      const container = document.getElementById('chart-'+cardId);
+      if (!container || typeof LightweightCharts === 'undefined') return;
+      const rows = (result.query_result && result.query_result.rows) || [];
+      if (!rows.length) return;
+      const dateField = findDateField(rows);
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (hasOHLC(rows)) renderCandlestickChart(container, rows, dateField, isDark);
+      else { const field = chooseNumericField(rows); if (field && rows.length>=2) renderLineChart(container, rows, dateField, field, isDark); }
+    }
+
+    function renderCandlestickChart(container, rows, dateField, isDark) {
+      const chart = LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: isDark ? '#0d1020' : '#ffffff' },
+          textColor: isDark ? '#7a7262' : '#6b6050',
+          fontFamily: '"DM Sans", sans-serif',
+        },
+        grid: {
+          vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+          horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        timeScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)' },
+      });
+
+      const candleSeries = chart.addCandlestickSeries({
+        upColor: '#22c55e', downColor: '#ef4444',
+        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+      });
+      const volumeSeries = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'volume' });
+      chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
+      const candleData = []; const volumeData = [];
+      for (const row of rows) {
+        const time  = dateField ? parseDate(row[dateField]) : null;
+        if (!time) continue;
+        const open  = Number(row.OpenPrice);
+        const high  = Number(row.HighPrice);
+        const low   = Number(row.LowPrice);
+        const close = row.LatestPrice ? Number(row.LatestPrice) : (row.ClosePrice ? Number(row.ClosePrice) : null);
+        if (Number.isNaN(open)||Number.isNaN(high)||Number.isNaN(low)||close===null||Number.isNaN(close)) continue;
+        candleData.push({ time, open, high, low, close });
+        const vol = Number(row.Volume||0);
+        if (!Number.isNaN(vol)) volumeData.push({ time, value: vol, color: close>=open?'rgba(34,197,94,0.28)':'rgba(239,68,68,0.28)' });
+      }
+
+      if (candleData.length) {
+        candleData.sort((a,b)=>a.time-b.time);
+        candleSeries.setData(candleData);
+        if (candleData.length>=5) {
+          const ma5Series = chart.addLineSeries({ color:'#e8a020', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+          ma5Series.setData(calcMA(candleData,5));
+        }
+        if (candleData.length>=20) {
+          const ma20Series = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, priceLineVisible:false, lastValueVisible:false });
+          ma20Series.setData(calcMA(candleData,20));
+        }
+      }
+      if (volumeData.length) { volumeData.sort((a,b)=>a.time-b.time); volumeSeries.setData(volumeData); }
+      chart.timeScale().fitContent();
+      const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+      ro.observe(container);
+    }
+
+    function calcMA(candleData, period) {
+      const result = [];
+      for (let i=period-1; i<candleData.length; i++) {
+        let sum=0; for (let j=i-period+1; j<=i; j++) sum+=candleData[j].close;
+        result.push({ time: candleData[i].time, value: sum/period });
+      }
+      return result;
+    }
+
+    function _calcEMA(values, period) {
+      const k = 2 / (period + 1);
+      const out = new Array(values.length).fill(null);
+      if (values.length < period) return out;
+      let sum = 0;
+      for (let i = 0; i < period; i++) sum += values[i];
+      out[period - 1] = sum / period;
+      for (let i = period; i < values.length; i++) out[i] = values[i] * k + out[i-1] * (1 - k);
+      return out;
+    }
+
+    function calcRSIData(candleData, period = 14) {
+      if (candleData.length < period + 1) return [];
+      const gains = [], losses = [];
+      for (let i = 1; i < candleData.length; i++) {
+        const d = candleData[i].close - candleData[i-1].close;
+        gains.push(d > 0 ? d : 0);
+        losses.push(d < 0 ? -d : 0);
+      }
+      let ag = gains.slice(0, period).reduce((a,b)=>a+b) / period;
+      let al = losses.slice(0, period).reduce((a,b)=>a+b) / period;
+      const result = [];
+      for (let i = period; i < candleData.length; i++) {
+        const rs = al === 0 ? 100 : ag / al;
+        result.push({ time: candleData[i].time, value: +(100 - 100/(1+rs)).toFixed(2) });
+        ag = (ag * (period-1) + gains[i-1]) / period;
+        al = (al * (period-1) + losses[i-1]) / period;
+      }
+      return result;
+    }
+
+    function calcMACDData(candleData, fast = 12, slow = 26, sig = 9) {
+      if (candleData.length < slow + sig) return null;
+      const closes = candleData.map(d => d.close);
+      const ema12 = _calcEMA(closes, fast);
+      const ema26 = _calcEMA(closes, slow);
+      const difVals = [], difTimes = [];
+      for (let i = slow - 1; i < candleData.length; i++) {
+        if (ema12[i] !== null && ema26[i] !== null) {
+          difVals.push(ema12[i] - ema26[i]);
+          difTimes.push(candleData[i].time);
+        }
+      }
+      if (difVals.length < sig) return null;
+      const deaVals = _calcEMA(difVals, sig);
+      const dif = [], dea = [], hist = [];
+      for (let i = sig - 1; i < difVals.length; i++) {
+        const t = difTimes[i], d = +difVals[i].toFixed(4), a = +deaVals[i].toFixed(4);
+        const h = +((d - a) * 2).toFixed(4);
+        dif.push({ time: t, value: d });
+        dea.push({ time: t, value: a });
+        hist.push({ time: t, value: h, color: h >= 0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)' });
+      }
+      return { dif, dea, hist };
+    }
+
+    function renderLineChart(container, rows, dateField, field, isDark) {
+      const chart = LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: isDark ? '#0d1020' : '#ffffff' },
+          textColor: isDark ? '#7a7262' : '#6b6050',
+          fontFamily: '"DM Sans", sans-serif',
+        },
+        grid: {
+          vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+          horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        timeScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)' },
+      });
+
+      const series = chart.addAreaSeries({
+        lineColor: '#e8a020',
+        topColor:    'rgba(232,160,32,0.24)',
+        bottomColor: 'rgba(232,160,32,0.02)',
+        lineWidth: 2,
+      });
+
+      const data = [];
+      for (const row of rows) {
+        const time = dateField ? parseDate(row[dateField]) : null;
+        if (!time) continue;
+        const v = Number(row[field]);
+        if (Number.isNaN(v)) continue;
+        data.push({ time, value: v });
+      }
+      if (data.length) { data.sort((a,b)=>a.time-b.time); series.setData(data); }
+      chart.timeScale().fitContent();
+      const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+      ro.observe(container);
+    }
+
+    function _makeSubChart(container, isDark) {
+      return LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: isDark ? '#0d1020' : '#ffffff' },
+          textColor: isDark ? '#7a7262' : '#6b6050',
+          fontFamily: '"DM Sans", sans-serif',
+        },
+        grid: {
+          vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+          horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        timeScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)' },
+        handleScroll: false, handleScale: false,
+      });
+    }
+
+    function renderRsiChart(container, candleData, isDark) {
+      const rsiData = calcRSIData(candleData, 14);
+      if (rsiData.length < 5) return;
+      const chart = _makeSubChart(container, isDark);
+      const rsiSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+      rsiSeries.setData(rsiData);
+      const times = rsiData.map(d => d.time);
+      const ob = chart.addLineSeries({ color: 'rgba(239,68,68,0.45)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      ob.setData(times.map(t => ({ time: t, value: 70 })));
+      const os = chart.addLineSeries({ color: 'rgba(34,197,94,0.45)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      os.setData(times.map(t => ({ time: t, value: 30 })));
+      chart.timeScale().fitContent();
+      const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+      ro.observe(container);
+    }
+
+    function renderMacdChart(container, candleData, isDark) {
+      const macdData = calcMACDData(candleData);
+      if (!macdData || macdData.dif.length < 5) return;
+      const chart = _makeSubChart(container, isDark);
+      const histSeries = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+      histSeries.setData(macdData.hist);
+      const difSeries = chart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, title: 'DIF' });
+      difSeries.setData(macdData.dif);
+      const deaSeries = chart.addLineSeries({ color: '#f97316', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, title: 'DEA' });
+      deaSeries.setData(macdData.dea);
+      chart.timeScale().fitContent();
+      const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }));
+      ro.observe(container);
+    }
+
+    function renderIndicatorCharts(result, cardId) {
+      const intent = result.intent || (result.plan && result.plan.intent) || 'query';
+      if (intent !== 'pattern' && intent !== 'volume_price' && intent !== 'volatility') return;
+      const rows = (result.query_result && result.query_result.rows) || [];
+      if (!hasOHLC(rows)) return;
+      const dateField = findDateField(rows);
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const candleData = [];
+      for (const row of rows) {
+        const time = dateField ? parseDate(row[dateField]) : null;
+        if (!time) continue;
+        const close = row.LatestPrice ? Number(row.LatestPrice) : (row.ClosePrice ? Number(row.ClosePrice) : null);
+        if (close === null || Number.isNaN(close)) continue;
+        candleData.push({ time, close });
+      }
+      candleData.sort((a,b) => a.time - b.time);
+      if (candleData.length < 15) return;
+      const rsiEl = document.getElementById('rsi-chart-' + cardId);
+      if (rsiEl) renderRsiChart(rsiEl, candleData, isDark);
+      const macdEl = document.getElementById('macd-chart-' + cardId);
+      if (macdEl) renderMacdChart(macdEl, candleData, isDark);
+    }
+
+    /* Step progress */
+    function renderStepProgress(completedSteps, currentStep) {
+      stepProgress.classList.remove('hidden');
+      let html = '';
+      STEP_DISPLAY.forEach((step,i) => {
+        const isDone   = completedSteps.has(step) && step !== currentStep;
+        const isActive = step === currentStep;
+        html += `<div class="step-node"><span class="step-circle ${isDone?'done':isActive?'active':''}"></span>${STEP_DISPLAY_NAMES[step]}</div>`;
+        if (i < STEP_DISPLAY.length-1) html += '<span class="step-connector"></span>';
+      });
+      stepProgress.innerHTML = html;
+    }
+    function hideStepProgress() { setTimeout(() => stepProgress.classList.add('hidden'), 800); }
+
+    function setStopMode(on) {
+      document.getElementById('iconSend').style.display = on ? 'none' : '';
+      document.getElementById('iconStop').style.display = on ? '' : 'none';
+      sendBtn.classList.toggle('stop-mode', on);
+      sendBtn.disabled = false;
+      sendBtn.title = on ? '停止 (Esc)' : '发送 (Enter)';
+    }
+
+    async function abortCurrentStream() {
+      if (!currentStreamId) return;
+      try {
+        await fetch('/api/abort', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stream_id: currentStreamId }),
+        });
+      } catch (_) { /* ignore */ }
+      currentStreamId = null;
+    }
+
+    /* Query */
+    async function runQuery(question) {
+      if (isRunning) return;
+      isRunning = true;
+      currentStreamId = genId();
+      setStopMode(true);
+      if (!currentConvId) currentConvId = genId();
+
+      appendUserMsg(question);
+      appendSkeletonMsg();
+
+      const completedSteps = new Set();
+      let currentState = null, currentEventName = '';
+
+      try {
+        const streamId = currentStreamId;
+        const response = await fetch(STREAM_URL, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, stream_id: streamId }),
+        });
+        if (!response.ok) throw new Error('SSE 连接失败');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (trimmed.startsWith('event:')) { currentEventName = trimmed.slice(6).trim(); continue; }
+            if (trimmed.startsWith('data:')) {
+              let data;
+              try { data = JSON.parse(trimmed.slice(5).trim()); } catch { currentEventName=''; continue; }
+              if (currentEventName === 'aborted') { currentEventName = ''; break; }
+              const NODE_TO_STEP = {
+                intent:'intent', planner:'planner', tool_selector:'tool_selector',
+                tool_executor:'tool_executor', observation:'observation', decision:'decision',
+                sql_generate:'sql_generate', sql_execute:'sql_execute', sql_validate:'sql_validate',
+                analysis_dispatch:'analysis_dispatch', basic_analysis:'basic_analysis',
+                pattern_analysis:'pattern_analysis', volume_price_analysis:'volume_price_analysis',
+                volatility_analysis:'volatility_analysis', summarize:'summarize',
+              };
+              const nodeStep = NODE_TO_STEP[currentEventName] || null;
+              if (nodeStep) { completedSteps.add(nodeStep); renderStepProgress(completedSteps, nodeStep); }
+              currentState = data; currentEventName = '';
+            }
+          }
+        }
+
+        if (buffer.trim() && buffer.trim().startsWith('data:')) {
+          try { currentState = JSON.parse(buffer.trim().slice(5).trim()); } catch { /* ignore */ }
+        }
+
+        removeSkeleton(); hideStepProgress();
+        if (currentState && currentState.status !== 'aborted') {
+          currentState._completedSteps = [...completedSteps]; appendAiMsg(currentState, question); saveToHistory(question, currentState);
+        }
+      } catch (sseErr) {
+        console.warn('SSE failed, falling back to sync API:', sseErr.message);
+        try {
+          const resp = await fetch(API_URL, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || '请求失败');
+          removeSkeleton(); hideStepProgress();
+          appendAiMsg(data, question); saveToHistory(question, data);
+        } catch (err) {
+          removeSkeleton(); hideStepProgress();
+          appendErrorMsg(err.message || '请求失败，请检查后端是否已启动');
+        }
+      } finally {
+        isRunning = false; currentStreamId = null; setStopMode(false); questionInput.focus();
+      }
+    }
+
+    function appendErrorMsg(text) {
+      if (welcomeScreen) welcomeScreen.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'msg-ai';
+      div.innerHTML = `<div class="ai-card" style="border-color:rgba(239,68,68,0.3)">
+        <div class="ai-card-body">
+          <div style="color:var(--color-down);font-size:13px;padding:8px 0">
+            <strong>执行失败</strong>：${escapeHtml(text)}
+          </div>
+        </div>
+      </div>`;
+      chatFlow.appendChild(div); scrollToBottom();
+    }
+
+    function saveToHistory(question, result) {
+      const intent = result.intent || (result.plan && result.plan.intent) || 'query';
+      const conv = conversations.find(c => c.id === currentConvId);
+      const simplified = { intent, question, summary: result.summary, sql: result.sql, _completedSteps: result._completedSteps, query_result: result.query_result, analysis_result: result.analysis_result, pattern_result: result.pattern_result, quant_result: result.quant_result, plan: result.plan };
+      const aiMsg = { role: 'ai', result: simplified, question };
+      if (conv) { conv.messages.push({ role:'user', text: question }, aiMsg); conv.timestamp = Date.now(); }
+      else conversations.unshift({ id: currentConvId, question, intent, timestamp: Date.now(), messages: [{ role:'user', text: question }, aiMsg] });
+      sessionStorage.setItem(HISTORY_KEY, JSON.stringify(conversations));
+      renderHistory();
+    }
+
+    /* Input */
+    sendBtn.addEventListener('click', () => {
+      if (isRunning) { abortCurrentStream(); return; }
+      const q = questionInput.value.trim();
+      if (q) { questionInput.value = ''; autoResize(); runQuery(q); }
+    });
+    questionInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+    });
+    function autoResize() {
+      questionInput.style.height = 'auto';
+      questionInput.style.height = Math.min(questionInput.scrollHeight, 120)+'px';
+    }
+    questionInput.addEventListener('input', autoResize);
+
+    document.querySelectorAll('.example-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const q = chip.dataset.q;
+        if (q) { questionInput.value = q; autoResize(); runQuery(q); questionInput.value = ''; autoResize(); }
+      });
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key==='k') { e.preventDefault(); questionInput.focus(); }
+      if (e.ctrlKey && e.key==='l') { e.preventDefault(); startNewChat(); }
+      if (e.ctrlKey && e.key==='b') { e.preventDefault(); sidebar.classList.toggle('collapsed'); }
+      if (e.key === 'Escape' && isRunning) { abortCurrentStream(); }
+    });
+
+    renderHistory();
+    questionInput.focus();
+    setInterval(() => renderHistory(), 60000);
+  </script>
+</body>
+</html>

@@ -140,11 +140,8 @@ class PythonDataAnalysisTool(AgentTool):
     ]
 
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        data_source = get_data_source_by_name(arguments.get("data_source", "sqlite_default"))
-        if not data_source:
-            return {"ok": False, "error": f"未知数据源: {arguments.get('data_source')}"}
-
-        query_result = data_source.query({"sql": arguments["sql_query"]})
+        # 始终走原始行查询路径，避免 data_source.query() 因 SQL 含聚合函数而路由到 safe_execute_aggregate
+        query_result = safe_execute(arguments["sql_query"])
         rows = query_result.get("rows", [])
         if not rows:
             return {"ok": False, "error": query_result.get("error", "无数据可分析")}
